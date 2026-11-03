@@ -77,12 +77,13 @@ class OnTheFlyCaptchaDataset(Dataset):
 
     def __init__(self, config: GeneratorConfig | None = None, length: int = 100_000, seed: int = 0,
                  difficulties=(1, 2, 3, 4, 5), transform=None, split: str = "train",
-                 val_pct: int = 5, test_pct: int = 5):
+                 val_pct: int = 5, test_pct: int = 5, weights=None):
         self.config = config or GeneratorConfig()
         self.generator = CaptchaGenerator(self.config, seed=seed)
         self.vocab = Vocab(self.config.vocab)
         self.length = length
         self.difficulties = list(difficulties)  # mutable: change it between epochs for a curriculum
+        self.weights = weights                  # relative sampling weight per difficulty (None = uniform)
         self.transform = transform or default_transform()
         self.split = split
         self.val_pct, self.test_pct = val_pct, test_pct
@@ -93,11 +94,11 @@ class OnTheFlyCaptchaDataset(Dataset):
 
     def __getitem__(self, idx):
         rng = random.Random((self.epoch * self.length + idx) * 7919)
-        attempt = 0
+        difficulty = rng.choices(self.difficulties, self.weights)[0]
+        # Pick the label first (cheap) and only render once it falls in our split
         while True:
-            key = (self.epoch * self.length + idx) * 64 + attempt
-            sample = self.generator.generate(key, rng.choice(self.difficulties))
-            if split_for_label(sample.text, self.val_pct, self.test_pct) == self.split:
+            text, _ = self.generator._random_label(rng, difficulty)
+            if split_for_label(text, self.val_pct, self.test_pct) == self.split:
                 break
-            attempt += 1
+        sample = self.generator.generate(self.epoch * self.length + idx, difficulty, text=text)
         return self.transform(sample.image), self.vocab.encode(sample.text), sample.text
