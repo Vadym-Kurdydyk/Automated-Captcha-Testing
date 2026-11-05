@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Captcha Challenge</title>
+<style>
+  :root { --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #667085; --border: #d9dde5;
+          --accent: #3b6cf6; --ok: #1f9d55; --bad: #d14343; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171c; --card: #1d2129; --text: #e6e8ec; --muted: #9aa3b2; --border: #2e3440;
+            --accent: #7b9cff; --ok: #4cc38a; --bad: #ef6b6b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 520px; margin: 0 auto; padding: 32px 16px; }
+  h1 { font-size: 22px; margin: 0 0 16px; }
+  form { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; }
+  .top label { color: var(--muted); font-size: 13px; }
+  #captcha { display: block; max-width: 100%; border-radius: 6px; margin: 0 auto 16px; min-height: 40px; }
+  .line { display: flex; gap: 8px; }
+  input, select, button { font: inherit; border-radius: 8px; border: 1px solid var(--border);
+                          background: var(--bg); color: var(--text); padding: 8px 12px; }
+  #answer { flex: 1; min-width: 0; font-family: ui-monospace, Consolas, monospace; letter-spacing: 1px; }
+  button { cursor: pointer; }
+  #submit { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #result { min-height: 1.5em; margin: 12px 0 0; font-weight: 600; }
+  #result.correct { color: var(--ok); }
+  #result.wrong { color: var(--bad); }
+  a { color: var(--accent); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Captcha Challenge</h1>
+  <form id="form">
+    <div class="top">
+      <label>Difficulty
+        <select id="difficulty">
+          <option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option>
+        </select>
+      </label>
+      <button type="button" id="new">New captcha</button>
+    </div>
+    <img id="captcha" alt="captcha">
+    <div class="line">
+      <input id="answer" autocomplete="off" placeholder="Type the characters">
+      <button id="submit" type="submit">Verify</button>
+    </div>
+    <p id="result" role="status"></p>
+  </form>
+  <p><a href="/">← Upload your own images</a></p>
+</main>
+<script>
+  const params = new URLSearchParams(location.search);
+  const sel = document.getElementById("difficulty"), img = document.getElementById("captcha");
+  const answer = document.getElementById("answer"), result = document.getElementById("result");
+  let id = null;
+  if (params.get("difficulty")) sel.value = params.get("difficulty");
+
+  async function load() {
+    const c = await (await fetch(`/api/challenge?difficulty=${sel.value}`)).json();
+    id = c.id;
+    img.src = c.image;
+    img.dataset.challengeId = c.id;
+    answer.value = "";
+    result.textContent = "";
+    result.className = "";
+  }
+
+  document.getElementById("form").addEventListener("submit", async ev => {
+    ev.preventDefault();
+    const res = await fetch("/api/verify", { method: "POST", headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({ id, answer: answer.value }) });
+    const r = await res.json();
+    if (!res.ok) { result.textContent = r.detail; result.className = "wrong"; return; }
+    result.className = r.correct ? "correct" : "wrong";
+    result.textContent = r.correct ? "Correct" : `Wrong — it was ${r.expected}`;
+  });
+  document.getElementById("new").addEventListener("click", load);
+  sel.addEventListener("change", load);
+  load();
+</script>
+</body>
+</html>

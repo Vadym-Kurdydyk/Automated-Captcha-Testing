@@ -57,6 +57,8 @@ def main():
     p.add_argument("--difficulty", default="1-5", help="single level '3' or range '1-5' (spread evenly)")
     p.add_argument("--width", type=int, default=256)
     p.add_argument("--height", type=int, default=64)
+    p.add_argument("--random-size", action="store_true", help="vary canvas size / aspect ratio per image")
+    p.add_argument("--style-variety", action="store_true", help="extra fonts, hollow/bold letters, grids")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--val-pct", type=int, default=5)
     p.add_argument("--test-pct", type=int, default=5)
@@ -64,7 +66,8 @@ def main():
     args = p.parse_args()
 
     config = GeneratorConfig(mode=args.mode, charset=args.charset, min_length=args.min_length,
-                             max_length=args.max_length, width=args.width, height=args.height)
+                             max_length=args.max_length, width=args.width, height=args.height,
+                             random_size=args.random_size, style_variety=args.style_variety)
     out = Path(args.out)
     (out / "images").mkdir(parents=True, exist_ok=True)
 

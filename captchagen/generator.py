@@ -21,6 +21,15 @@ DEFAULT_FONT_NAMES = [
     "bahnschrift.ttf", "Candara.ttf", "corbel.ttf", "constan.ttf", "pala.ttf", "lucon.ttf",
 ]
 
+# Added with style_variety: italics and handwriting-like faces
+EXTRA_FONT_NAMES = [
+    "ariali.ttf", "arialbi.ttf", "timesi.ttf", "timesbi.ttf", "georgiai.ttf", "georgiaz.ttf",
+    "verdanai.ttf", "verdanaz.ttf", "comici.ttf", "comicz.ttf", "trebucit.ttf", "segoeuii.ttf",
+    "segoeuiz.ttf", "calibrii.ttf", "calibriz.ttf", "consolai.ttf", "consolaz.ttf", "couri.ttf",
+    "segoepr.ttf", "segoeprb.ttf", "segoesc.ttf", "segoescb.ttf", "Inkfree.ttf", "mvboli.ttf",
+    "framd.ttf", "framdit.ttf", "micross.ttf", "sylfaen.ttf", "ebrima.ttf",
+]
+
 CHARSETS = {
     "digits": "0123456789",
     "upper": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
@@ -44,6 +53,15 @@ class GeneratorConfig:
     operators: str = MATH_OPERATORS
     width: int = 256
     height: int = 64
+    # random_size: each image gets its own canvas size (height in the range below, width from an
+    # aspect ratio); width/height above then only describe the model input
+    random_size: bool = False
+    min_height: int = 32
+    max_height: int = 140
+    min_aspect: float = 1.8
+    max_aspect: float = 6.0
+    # style_variety: extra fonts, hollow/bold/thin letters, grid backgrounds
+    style_variety: bool = False
     font_dirs: list = field(default_factory=lambda: ["fonts", "C:/Windows/Fonts"])
     font_names: list = field(default_factory=lambda: list(DEFAULT_FONT_NAMES))
 
@@ -82,7 +100,8 @@ def find_fonts(config: GeneratorConfig) -> list[str]:
             # Project font folder: take everything
             found += sorted(str(f) for f in p.iterdir() if f.suffix.lower() in (".ttf", ".otf"))
         else:
-            found += [str(p / n) for n in config.font_names if (p / n).is_file()]
+            names = config.font_names + (EXTRA_FONT_NAMES if config.style_variety else [])
+            found += [str(p / n) for n in names if (p / n).is_file()]
     if not found:
         raise RuntimeError(f"No fonts found in {config.font_dirs}; put some .ttf files in ./fonts")
     return found
@@ -112,10 +131,11 @@ class CaptchaGenerator:
         if text is None:
             text, answer = self._random_label(rng, difficulty)
 
-        bg = self._background(rng, t)
+        w, h = self._canvas_size(rng)
+        bg = self._background(rng, t, w, h)
         text_color = self._text_color(rng, bg)
         self._draw_noise(bg, rng, t, under_text=True)
-        text_layer = self._render_text(text, rng, t, text_color)
+        text_layer = self._render_text(text, rng, t, text_color, h)
         self._paste_centered(bg, text_layer, rng, t)
         self._draw_noise(bg, rng, t, under_text=False, text_color=text_color)
 
@@ -144,11 +164,20 @@ class CaptchaGenerator:
 
     # ---------- background ----------
 
-    def _background(self, rng: random.Random, t: float) -> Image.Image:
-        w, h = self.config.width, self.config.height
+    def _canvas_size(self, rng: random.Random) -> tuple[int, int]:
+        cfg = self.config
+        if not cfg.random_size:
+            return cfg.width, cfg.height
+        h = rng.randint(cfg.min_height, cfg.max_height)
+        return int(h * rng.uniform(cfg.min_aspect, cfg.max_aspect)), h
+
+    def _background(self, rng: random.Random, t: float, w: int, h: int) -> Image.Image:
         base = tuple(rng.randint(200, 255) if rng.random() < 0.7 else rng.randint(0, 255) for _ in range(3))
         if rng.random() > 0.2 + 0.6 * t:
-            return Image.new("RGB", (w, h), base)
+            img = Image.new("RGB", (w, h), base)
+            if self.config.style_variety and rng.random() < 0.25:
+                self._draw_grid(img, rng, base)
+            return img
         # Linear gradient between two colors, at a random angle
         other = tuple(max(0, min(255, c + rng.randint(-120, 120))) for c in base)
         angle = rng.uniform(0, math.pi)
@@ -157,6 +186,17 @@ class CaptchaGenerator:
         proj = (proj - proj.min()) / max(1e-6, proj.max() - proj.min())
         arr = np.array(base, np.float32) * (1 - proj[..., None]) + np.array(other, np.float32) * proj[..., None]
         return Image.fromarray(arr.astype(np.uint8), "RGB")
+
+    @staticmethod
+    def _draw_grid(img: Image.Image, rng: random.Random, base: tuple):
+        """Faint graph-paper lines, slightly darker than the background."""
+        d = ImageDraw.Draw(img)
+        color = tuple(max(0, c - rng.randint(25, 60)) for c in base)
+        step = rng.randint(6, 16)
+        for x in range(rng.randint(0, step), img.width, step):
+            d.line([(x, 0), (x, img.height)], fill=color)
+        for y in range(rng.randint(0, step), img.height, step):
+            d.line([(0, y), (img.width, y)], fill=color)
 
     @staticmethod
     def _luminance(c) -> float:
@@ -173,8 +213,7 @@ class CaptchaGenerator:
 
     # ---------- text ----------
 
-    def _render_text(self, text: str, rng: random.Random, t: float, color: tuple) -> Image.Image:
-        h = self.config.height
+    def _render_text(self, text: str, rng: random.Random, t: float, color: tuple, h: int) -> Image.Image:
         font_path = rng.choice(self.fonts)
         mixed_fonts = t > 0.5 and rng.random() < 0.3   # hardest levels: font changes per char
         base_size = int(h * rng.uniform(0.75, 0.95))
@@ -210,9 +249,26 @@ class CaptchaGenerator:
             x += g.width + int(spacing)
 
         mask = mask.crop(mask.getbbox())
+        if self.config.style_variety:
+            mask = self._stroke_style(mask, rng)
         layer = Image.new("RGBA", mask.size, color + (0,))
         layer.putalpha(mask)
         return layer
+
+    @staticmethod
+    def _stroke_style(mask: Image.Image, rng: random.Random) -> Image.Image:
+        """Sometimes draw letters hollow (outline only), bolder or thinner."""
+        r = rng.random()
+        if r < 0.15:   # hollow: the glyph minus its eroded interior
+            k = 5 if mask.height > 40 else 3
+            inner = mask.filter(ImageFilter.MinFilter(k))
+            return Image.fromarray(np.clip(np.asarray(mask, np.int16) - np.asarray(inner, np.int16), 0, 255)
+                                   .astype(np.uint8))
+        if r < 0.27:
+            return mask.filter(ImageFilter.MaxFilter(3))
+        if r < 0.35 and mask.height > 40:
+            return mask.filter(ImageFilter.MinFilter(3))
+        return mask
 
     def _paste_centered(self, bg: Image.Image, layer: Image.Image, rng: random.Random, t: float):
         w, h = bg.size
@@ -235,8 +291,12 @@ class CaptchaGenerator:
         d = ImageDraw.Draw(img)
         if under_text:
             # Background clutter: dots and faint arcs
-            for _ in range(int(rng.uniform(0, 1) * (20 + 300 * t))):
-                x, y, r = rng.randint(0, w), rng.randint(0, h), rng.randint(0, 1 + int(2 * t))
+            # Dots scale with the canvas height, so their count follows the aspect ratio: the covered
+            # fraction of the image stays the same on any canvas (factors are exactly 1 at 256x64)
+            rel = (w * 64) / (256 * h)
+            for _ in range(int(rng.uniform(0, 1) * (20 + 300 * t) * rel)):
+                x, y = rng.randint(0, w), rng.randint(0, h)
+                r = int(rng.randint(0, 1 + int(2 * t)) * h / 64)
                 d.ellipse((x - r, y - r, x + r, y + r), fill=self._rand_color(rng))
             for _ in range(rng.randint(0, 1 + int(4 * t))):
                 x0, y0 = rng.randint(-w // 2, w), rng.randint(-h, h)

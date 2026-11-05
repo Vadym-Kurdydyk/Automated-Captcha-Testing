@@ -45,3 +45,9 @@ def greedy_decode(log_probs: torch.Tensor) -> list[list[int]]:
             prev = idx
         out.append(seq)
     return out
+
+
+def path_confidence(log_probs: torch.Tensor) -> list[float]:
+    """Probability of the greedy path per sample (product of the per-column max probabilities).
+    Near 1.0 = the model is sure; it drops fast when even one character is ambiguous."""
+    return log_probs.max(2).values.sum(0).exp().tolist()

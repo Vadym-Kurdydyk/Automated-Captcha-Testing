@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Captcha Reader</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #667085; --border: #d9dde5;
+    --accent: #3b6cf6; --ok: #1f9d55; --warn: #c27c0e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171c; --card: #1d2129; --text: #e6e8ec; --muted: #9aa3b2; --border: #2e3440;
+            --accent: #7b9cff; --ok: #4cc38a; --warn: #f0b44c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 32px 16px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; font-size: 13px; }
+  .sub a { color: var(--accent); }
+  #drop { display: block; border: 2px dashed var(--border); border-radius: 12px; background: var(--card);
+          padding: 40px 16px; text-align: center; cursor: pointer; transition: border-color .15s; }
+  #drop.over { border-color: var(--accent); }
+  #drop strong { display: block; font-size: 16px; margin-bottom: 4px; }
+  #drop span { color: var(--muted); font-size: 13px; }
+  #error { color: var(--warn); margin: 12px 0 0; min-height: 1em; }
+  #results { display: grid; gap: 12px; margin-top: 20px; }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 16px; align-items: center;
+         background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+  .row img { max-width: 100%; max-height: 120px; border-radius: 6px; display: block; }
+  .name { color: var(--muted); font-size: 12px; margin-top: 6px; word-break: break-all; }
+  .pred { font: 600 24px/1.2 ui-monospace, Consolas, monospace; letter-spacing: 1px; word-break: break-all; }
+  .answer { font-size: 14px; color: var(--muted); }
+  .bar { height: 6px; background: var(--border); border-radius: 3px; margin: 8px 0 4px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--ok); }
+  .low .bar i { background: var(--warn); }
+  .conf { font-size: 12px; color: var(--muted); }
+  .low .conf { color: var(--warn); }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Captcha Reader</h1>
+  <p class="sub" id="info">Loading model…</p>
+
+  <label id="drop">
+    <strong>Drop captcha images here</strong>
+    <span>or click to choose · PNG / JPG · any size · up to 16 at once</span>
+    <input id="file" type="file" accept="image/*" multiple hidden>
+  </label>
+  <p id="error"></p>
+  <div id="results"></div>
+</main>
+<script>
+  const drop = document.getElementById("drop"), input = document.getElementById("file");
+  const results = document.getElementById("results"), error = document.getElementById("error");
+
+  fetch("/api/info").then(r => r.json()).then(i => {
+    document.getElementById("info").innerHTML =
+      `Model <code>${i.checkpoint}</code> on ${i.device}. Trained on this project's own generator — ` +
+      `other sites' captchas will mostly fail. <a href="/challenge">Try a generated challenge →</a>`;
+  });
+
+  ["dragenter", "dragover"].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop", ev => send(ev.dataTransfer.files));
+  input.addEventListener("change", () => send(input.files));
+
+  async function send(files) {
+    files = [...files].filter(f => f.type.startsWith("image/"));
+    if (!files.length) return;
+    error.textContent = "";
+    const form = new FormData();
+    files.forEach(f => form.append("files", f));
+    const res = await fetch("/api/predict", { method: "POST", body: form });
+    const body = await res.json();
+    if (!res.ok) { error.textContent = body.detail || "Request failed"; return; }
+    body.forEach((p, i) => results.prepend(row(files[i], p)));
+  }
+
+  function row(file, p) {
+    const el = document.createElement("div");
+    el.className = "row" + (p.low_confidence ? " low" : "");
+    const pct = Math.round(p.confidence * 100);
+    el.innerHTML = `
+      <div><img alt=""><div class="name"></div></div>
+      <div>
+        <div class="pred"></div>
+        ${p.answer !== null ? `<div class="answer">= ${p.answer}</div>` : ""}
+        <div class="bar"><i style="width:${pct}%"></i></div>
+        <div class="conf">${pct}% confident${p.low_confidence ? " — probably wrong" : ""}</div>
+      </div>`;
+    el.querySelector("img").src = URL.createObjectURL(file);
+    el.querySelector(".name").textContent = `${p.filename} · ${p.size[0]}×${p.size[1]}`;
+    el.querySelector(".pred").textContent = p.text || "(nothing)";
+    return el;
+  }
+</script>
+</body>
+</html>

@@ -5,3 +5,4 @@ data/
 __pycache__/
 checkpoints/
 *.log
+e2e_results.json

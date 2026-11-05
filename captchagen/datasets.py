@@ -9,9 +9,9 @@ import pandas as pd
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
-from torchvision import transforms
 
 from captchagen.generator import CaptchaGenerator, GeneratorConfig
+from captchagen.preprocess import model_transform
 from captchagen.splits import split_for_label
 
 
@@ -33,8 +33,8 @@ class Vocab:
         return "".join(self.chars[i - 1] for i in indices if i > 0)
 
 
-def default_transform():
-    return transforms.Compose([transforms.Grayscale(), transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
+def default_transform(width: int = 256, height: int = 64):
+    return model_transform(width, height)
 
 
 def ctc_collate(batch):
