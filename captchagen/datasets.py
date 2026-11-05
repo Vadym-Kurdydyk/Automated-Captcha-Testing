@@ -49,11 +49,12 @@ def ctc_collate(batch):
 class ManifestCaptchaDataset(Dataset):
     """Reads <root>/labels.csv + images written by generate_dataset.py."""
 
-    def __init__(self, root: str, split: str = "train", transform=None, difficulties=None):
+    def __init__(self, root: str, split: str = "train", transform=None, difficulties=None, vocab: Vocab | None = None):
         self.root = root
         with open(os.path.join(root, "meta.json"), encoding="utf-8") as f:
             self.meta = json.load(f)
-        self.vocab = Vocab(self.meta["config"]["vocab"])
+        # vocab override: a model with a bigger vocab (e.g. extended while fine-tuning) encodes differently
+        self.vocab = vocab or Vocab(self.meta["config"]["vocab"])
         df = pd.read_csv(os.path.join(root, "labels.csv"), dtype={"text": str})
         df = df[df.split == split]
         if difficulties is not None:
@@ -77,10 +78,10 @@ class OnTheFlyCaptchaDataset(Dataset):
 
     def __init__(self, config: GeneratorConfig | None = None, length: int = 100_000, seed: int = 0,
                  difficulties=(1, 2, 3, 4, 5), transform=None, split: str = "train",
-                 val_pct: int = 5, test_pct: int = 5, weights=None):
+                 val_pct: int = 5, test_pct: int = 5, weights=None, vocab: Vocab | None = None):
         self.config = config or GeneratorConfig()
         self.generator = CaptchaGenerator(self.config, seed=seed)
-        self.vocab = Vocab(self.config.vocab)
+        self.vocab = vocab or Vocab(self.config.vocab)
         self.length = length
         self.difficulties = list(difficulties)  # mutable: change it between epochs for a curriculum
         self.weights = weights                  # relative sampling weight per difficulty (None = uniform)

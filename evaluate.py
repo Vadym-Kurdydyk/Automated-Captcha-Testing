@@ -32,17 +32,19 @@ def main():
 
     overall = SequenceMetrics()
     print(f"{args.checkpoint} on {args.data} [{args.split}]{' (stretch)' if args.stretch else ''}")
-    for level in range(1, 6):
+    all_rows = ManifestCaptchaDataset(args.data, args.split, transform)
+    unknown = set("".join(all_rows.frame.text)) - set(reader.vocab.chars)
+    if unknown:
+        print(f"  note: labels use characters this model can't output: {''.join(sorted(unknown))!r}")
+    for level in sorted(all_rows.frame.difficulty.unique()):
         ds = ManifestCaptchaDataset(args.data, args.split, transform, difficulties=[level])
-        if ds.vocab.chars != reader.vocab.chars:
-            raise SystemExit("dataset vocab doesn't match the checkpoint")
         m = SequenceMetrics()
         with torch.no_grad():
             for images, _, _, texts in DataLoader(ds, 128, num_workers=args.workers, collate_fn=ctc_collate):
                 preds = [reader.vocab.decode(s) for s in greedy_decode(reader.model(images.to(reader.device)))]
                 m.update(preds, texts)
                 overall.update(preds, texts)
-        print(f"  L{level}: acc {m.accuracy * 100:5.1f}%  CER {m.cer * 100:5.2f}%  ({m.n} images)")
+        print(f"  {'real' if level == 0 else f'L{level}'}: acc {m.accuracy * 100:5.1f}%  CER {m.cer * 100:5.2f}%  ({m.n} images)")
     print(f"  ALL: acc {overall.accuracy * 100:5.2f}%  CER {overall.cer * 100:5.2f}%")
 
 
