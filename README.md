@@ -8,6 +8,10 @@ to measure how well your captcha holds up.
 
 ![Generated captchas, one row per difficulty level](docs/preview_text.png)
 
+**[walkthrough.ipynb](walkthrough.ipynb)** explains every part with real outputs: how a captcha is
+built step by step, why the data is split by label, what the model sees, how CTC decoding works,
+training curves, failure cases, whether the confidence score can be trusted, and fine-tuning.
+
 ## Results
 
 All numbers are exact-match accuracy (every character right) on held-out test sets. Splits are made
