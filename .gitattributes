@@ -1,1 +1,5 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Keep the walkthrough notebook out of GitHub language stats
 *.ipynb linguist-documentation
